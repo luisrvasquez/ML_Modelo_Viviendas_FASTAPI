@@ -83,24 +83,47 @@ columns_toilet = ['A_TOTAL_(m2)', 'N_HABITACIONES', 'N_BAÑOS', 'TIENE_LAVADERO'
 
 @app.get("/")
 def home():
-    return {"message": "Conexión a Modelo de Predicción establecida (DEMO)."}
+    return {"message": "Connection established."}
 
 
 @app.post("/predict",response_model=PropertySpaces)
 async def predict(data: PropertyCharacteristics):
 
-    # Extracción de campos esperados desde el JSON original
-    total_area = data.usable_sqm
-    n_bedrooms = data.number_of_bedrooms
-    n_bathrooms = data.number_of_bathrooms
-    n_toilets = data.number_of_toilets
-    laundry = data.laundry
-    hall = data.entrance_hall
+    # Validación de inputs
+    if any(v is None for v in [data.built_sqm, data.usable_sqm, data.number_of_bedrooms, data.number_of_bathrooms, data.number_of_toilets]):
+        return JSONResponse(
+        status_code=400,
+        content={"error": "Required fields: 'built_sqm', 'usable_sqm', 'number_of_bedrooms', 'number_of_bathrooms', 'number_of_toilets'"}
+        )
 
-    # Pasar a enteros los valores que sea convenientes tener en enteros
-    n_bedrooms = int(n_bedrooms)
-    n_bathrooms = int(n_bathrooms)
-    n_toilets = int(n_toilets)
+
+    # Extracción de campos esperados desde el JSON original
+    
+    # Gestión de área útil y de área construida
+
+    if data.usable_sqm > 0:
+        total_area = data.usable_sqm
+    else:
+        total_area = data.built_sqm
+
+    # Gestión de valores enteros
+    n_bedrooms = int(data.number_of_bedrooms)
+    n_bathrooms = int(data.number_of_bathrooms)
+    n_toilets = int(data.number_of_toilets)
+
+    # Tratamiento de Hall y Laundry
+
+    # Laundry
+    if data.laundry is None:
+        laundry = False
+    else:
+        laundry = data.laundry
+
+    # Hall
+    if data.entrance_hall is None:
+        hall = False
+    else:
+        hall = data.entrance_hall
 
 
 
@@ -125,8 +148,12 @@ async def predict(data: PropertyCharacteristics):
         for proportion in proportions:
             room_size = round(pred_bedrooms * proportion, 2)
             bedrooms_list.append({"area": room_size, "perimeter": 0.0})
-    else:
+
+    elif n_bedrooms == 1:
         bedrooms_list.append({"area": pred_bedrooms, "perimeter": 0.0})
+    
+    else:
+        bedrooms_list.append({"area": 0.0, "perimeter": 0.0})
 
     bathrooms_list = []
     if n_bathrooms > 1:
@@ -134,10 +161,19 @@ async def predict(data: PropertyCharacteristics):
         for proportion in proportions:
             bathroom_size = round(pred_bathrooms * proportion, 2)
             bathrooms_list.append({"area": bathroom_size, "perimeter": 0.0})
-    else:
-        bathrooms_list.append({"area": pred_bathrooms, "perimeter": 0.0})
 
-    toilets_list = [{"area": pred_toilet if n_toilets == 1 else 0.0, "perimeter": 0.0}]
+    elif n_bathrooms == 1:
+        bathrooms_list.append({"area": pred_bathrooms, "perimeter": 0.0})
+    
+    else:
+        bathrooms_list.append({"area": 0.0, "perimeter": 0.0})
+
+    toilets_list = []
+    if n_toilets > 0:
+        for toilet in  range(0, n_toilets):
+            toilets_list.append({"area": pred_toilet, "perimeter": 0.0})
+    else:
+        toilets_list.append({"area": 0.0, "perimeter": 0.0})
 
     response = {
         "kitchen": {"area": pred_kitchen, "perimeter": 0.0},
